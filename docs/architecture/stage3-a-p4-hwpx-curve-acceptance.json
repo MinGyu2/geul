@@ -613,7 +613,7 @@
       },
       "C02": {
         "status": "PASS",
-        "evidence": "Contract-v1 Release WASM suite 6/6 verifies anchor movement, ordinary insertion/deletion, topology constraints, Undo/Redo and durable reopen; Native closed/open cases exercise the supported operations."
+        "evidence": "Contract-v1 Release WASM suite 6/6 verifies anchor movement, ordinary insertion/deletion, topology constraints, Undo/Redo and durable reopen; Native closed/open cases exercise the supported operations. Post-P1/P2 correction: Historical Contract-v1 baseline: Release WASM 6/6. Post-P1/P2 focused curve Contract WASM: 12/12 PASS; ObjectSelectionFrame UI: 40/40 PASS; direct RHWP topology unit tests: 2/2 PASS. The guarded Release Native contract case confirms ordinary anchor editing remains available while unsafe exact mixed-path operations are unavailable."
       },
       "C03": {
         "status": "PASS",
@@ -621,31 +621,31 @@
       },
       "C04": {
         "status": "PASS",
-        "evidence": "Closed and generated open fixtures both pass Native acceptance. Endpoint deletion and mixed LINE/CURVE boundary deletion remain unavailable; closure and minimum anchor rules are checked."
+        "evidence": "Closed and generated open fixtures both pass Native acceptance. Endpoint deletion and mixed LINE/CURVE boundary deletion remain unavailable; closure and minimum anchor rules are checked. Post-P1/P2 correction: Closed/open P4 Native fixtures PASS. Direct engine and UI boundary regressions cover 3, 4, 255, and 256 unique anchors, with the final repeated closure point excluded from the closed-path unique count. Inserts from 255 to 256 pass; inserts above 256 and deletion/merge below 3 reject; closed closure remains intact. Focused Contract WASM: 12/12; UI: 40/40."
       },
       "C05": {
         "status": "PASS",
-        "evidence": "UI and command paths distinguish shape-changing ordinary anchors from exact operations. Exact LINE split/join are tested separately; exact CURVE controls/split/merge are not exposed."
+        "evidence": "UI and command paths distinguish shape-changing ordinary anchors from exact operations. Exact LINE split/join are tested separately; exact CURVE controls/split/merge are not exposed. Post-P1/P2 correction: The UI and command contract distinguish ordinary shape-changing anchor operations from exact operations. Post-P1 Native evidence rejects exact split/merge on the mixed LINE/CURVE dependency path, while the all-LINE fixture accepts exact split and merge. Intermediate split and merged saved states are independently reopened. Exact arbitrary CURVE operations remain unavailable."
       },
       "C06": {
         "status": "PASS",
-        "evidence": "Negative Release WASM cases verify unsupported/unknown metadata, invalid operations, exact CURVE operations and independent-control edits reject without document/revision/history changes."
+        "evidence": "Negative Release WASM cases verify unsupported/unknown metadata, invalid operations, exact CURVE operations and independent-control edits reject without document/revision/history changes. Post-P1/P2 correction: Post-P1/P2 direct engine and adapter rejection regressions pass within the focused Contract WASM suite (12/12), with UI boundary tests (40/40). Unsafe mixed-path exact operations are unavailable; 256-anchor insertion/split and three-anchor deletion/merge reject without mutation. Existing unsupported metadata and independent-control edits remain fail-closed."
       },
       "C07": {
         "status": "PASS",
-        "evidence": "Independent OPC inspection confirms unrelated parts byte-identical, non-segment section XML unchanged, ownership/body/other objects unchanged, and only the relevant preview regenerated with valid 724x1024 PNG dimensions."
+        "evidence": "Independent OPC inspection confirms unrelated parts byte-identical, non-segment section XML unchanged, ownership/body/other objects unchanged, and only the relevant preview regenerated with valid 724x1024 PNG dimensions. Post-P1/P2 correction: Post-correction Native independent package proofs confirm the intended LINE/CURVE segment changes only, non-segment section SHA 89e27953e0a0d1e2e05aaff9e6d8f8f45704afffe38baa551cba00f57c81bee0, unrelated OPC part hashes unchanged, and saved native segment geometry. P6-HX-CURVE regression also confirms source bytes unchanged and all unrelated destination OPC parts byte-identical."
       },
       "C08": {
         "status": "PASS",
-        "evidence": "Supported mutation Undo/Redo and T009 publication pass in Release WASM/Native; Native saves report saved with empty findings and cleanup manifests prove no survivors."
+        "evidence": "Supported mutation Undo/Redo and T009 publication pass in Release WASM/Native; Native saves report saved with empty findings and cleanup manifests prove no survivors. Post-P1/P2 correction: Post-correction Native exact LINE split and merge Undo/Redo pass; both the intermediate split and merged states are saved/reopened. P4 T009 saves report saved, synced=true, changedSince=false, with no findings; both P4/P6 private-session cleanup proofs report no survivors. P6 transfer Undo/Redo and T009 pass."
       },
       "C09": {
         "status": "PASS",
-        "evidence": "Saved HWPX package segment records match the reopened engine model; both closed/open outputs reopen in a new clean document session with intended path and segment types."
+        "evidence": "Saved HWPX package segment records match the reopened engine model; both closed/open outputs reopen in a new clean document session with intended path and segment types. Post-P1/P2 correction: Post-correction saved exact LINE split package SHA-256 f073fa2dfa0470d64afdde9bd69d8733aee52efeb97b337911cbf72e2c0e9af6 and merged package SHA-256 b2a56ace7e3ff2ddce1a3820f5eec7975aeda6b36f22be0354b31cc4811d1102 are independently reopened. P6 transfer save/reopen package SHA-256 164cfa9c3f9d0ef2dc6a9e39c99e6859da6c635eaa330f1fa28db7598dc77743 matches the fresh-process acceptance."
       },
       "C10": {
         "status": "PASS",
-        "evidence": "Actual guarded Release Linux X11 Native case P4-HX-CURVE-CONTRACT-V1 passed for closed and open fixtures with trusted pointer input, capability checks, Undo/Redo, T009, independent package inspection, fresh-session reopen and proven cleanup."
+        "evidence": "Actual guarded Release Linux X11 Native case P4-HX-CURVE-CONTRACT-V1 passed for closed and open fixtures with trusted pointer input, capability checks, Undo/Redo, T009, independent package inspection, fresh-session reopen and proven cleanup. Post-P1/P2 correction: Post-P1/P2 actual guarded Release Linux X11 Native P4-HX-CURVE-CONTRACT-V1 PASS (PID 3174459), plus P6-HX-CURVE-TRANSFER PASS (PID 3175051) and distinct-process P6-HX-CURVE-TRANSFER-FRESH PASS (PID 3175343), all on RHWP generation e27db5aba6d573c7c1dcb1b5a6d644491c0d56a409097af5a49f09246a07ba8e. P4 result/cleanup SHA-256 9802b598e3c2d68b74f1deee9f734111319ddc82b667efcd9dac6398492a979b / 283f533b9b055e66acffb5b3639587b8add205d7f850d97cfcc4fa8e9dbff589; P6 result/cleanup SHA-256 1056751132c5bb71691e1bf196055b4fe511fd380f5cbec44e9d7ddb4eaf4665 / 3149a98b8ba0a4fb89d59809489070511f59463d010f45171ff45defb5fc45d. Both private-session cleanup proofs have no survivors."
       }
     },
     "focusedWasm": {
@@ -794,5 +794,134 @@
     "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types.",
     "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts.",
     "For the supported standard all-CURVE chain, compute Catmull–Rom-derived Bezier handles inferred from the public authentic sample model observed through its anchors/preview; this interpolation is not guaranteed by KS X 6101 and has no verified durable XML control-point contract. Support anchor insertion/removal; the derived handles are not independently serialized."
-  ]
+  ],
+  "postP1P2Correction": {
+    "recordedDate": "2026-11-28",
+    "status": "PASS; P4-HX-CURVE remains IMPLEMENTED_VERIFIED under approved Contract v1.0 only",
+    "reviewFindings": [
+      "P1: exact LINE split/join could alter neighboring derived CURVE geometry because that geometry depends on neighboring anchors.",
+      "P2: open/closed unique-anchor limits and engine/adapter/UI capability checks were inconsistent."
+    ],
+    "commits": {
+      "startingHead": "dd86cbeee6c3b43f62bc8cb114f113f891a25cb1",
+      "P1": "7851a15301a11cf50c7c22a7ac10bc08d1ab60f9",
+      "P2Commit": "d9ca571c1b47967b2c862ca6074d3bab1121918f"
+    },
+    "sourceIdentity": {
+      "wordcraftPin": "d714567c4ccc34884809e644676f879ee2008b89",
+      "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpOrderedPatchCount": 76,
+      "lastPatch": "patches/rhwp/stage3a-hwpx-curve-anchor-topology.patch",
+      "lastPatchSha256": "20f6736537a081bb609c50adb94550739ba3f1750fa154457e55e29ada17dfd9",
+      "preparedSourceTreeSha256": "ac60c27a96167a511eeb4a48b7f6bf28205c9678a1ac39868862af7a8481a3fb",
+      "manifestJsonRawFileSha256": "4279e6525d03d8a7ff8207a03aadc2b432cc9855d17e09b94c53765fe163e44a",
+      "manifestHashMeaning": "Raw SHA-256 of target/rhwp-patched-source.json bytes; it is distinct from the prepared source-tree SHA-256 and is not an aggregate patch-manifest digest."
+    },
+    "focusedChecks": {
+      "releaseCurveContractWasm": "PASS: 12/12",
+      "p6HwpxCurveClipboardRegression": "PASS: 2/2",
+      "objectSelectionFrame": "PASS: 40/40",
+      "typescriptTypecheck": "PASS: npm run typecheck",
+      "configuredRustfmt": "PASS: npm run rust -- fmt --check",
+      "rhwpTopologyUnitTests": "PASS: 2/2 against the fixture-linked prepared-source copy",
+      "guardedReleaseBuild": {
+        "command": "npm run tauri -- build",
+        "result": "PASS",
+        "applicationSha256": "86ead9f98522b26567dac01a607387b1f6aed3baae3d50600fecbb80f73c17ef",
+        "privacyAndRuntimePath": "PASS",
+        "portabilityOutsideNix": "NOT VERIFIED"
+      }
+    },
+    "releaseRhwp": {
+      "generation": "e27db5aba6d573c7c1dcb1b5a6d644491c0d56a409097af5a49f09246a07ba8e",
+      "generationJavascriptSha256": "f4cb5aaaf7217d7d8ba11b188f0c714f9626e7df46d597c01d0f58e3f06c4bb5",
+      "generationWasmSha256": "5fa63547365b9385fa5707c69ab00569c619c9e2b11a230ea219b6cda6830a81",
+      "runtimeSelection": "rhwpModule.ts selects /rhwp/generations/<generation>/ and checks generation JS/WASM hashes. The root public/rhwp JS/WASM aliases are not runtime-selected; their hashes are not used as this run identity."
+    },
+    "nativeP4": {
+      "case": "P4-HX-CURVE-CONTRACT-V1",
+      "status": "PASS",
+      "appPid": 3174459,
+      "applicationSha256": "86ead9f98522b26567dac01a607387b1f6aed3baae3d50600fecbb80f73c17ef",
+      "resultFile": "target/p1p2-results-p4-20261128/result.json",
+      "resultFileSha256": "9802b598e3c2d68b74f1deee9f734111319ddc82b667efcd9dac6398492a979b",
+      "cleanupFile": "target/p1p2-session-p4-20261128/cleanup.json",
+      "cleanupFileSha256": "283f533b9b055e66acffb5b3639587b8add205d7f850d97cfcc4fa8e9dbff589",
+      "cleanup": "PASS; private X11/IBus process and temporary-resource cleanup proven, no survivors.",
+      "mixedPath": {
+        "result": "Unsafe exact split and merge unavailable because adjacent CURVE geometry depends on the edited anchor; ordinary anchor editing remains available.",
+        "closedFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548",
+        "openFixtureSha256": "6b203185ec6b3b26347de3d5328b9b1e20c6c490f2e91077a9357d7699e98b66",
+        "closedPublishedSha256": "74d57d27fbfafdbb06518dcf44c80b1f99453339b8cd4433ab0cb5769d4507c8",
+        "openPublishedSha256": "208649a69e1e237f30484a7f181bb3d947fd87b977fe23a7256cbbd80084046f"
+      },
+      "safeAllLineExactOperations": {
+        "fixtureSha256": "ab4417c57b5bcb8da3dd2b2fa8d0ca9f91dca764880dc1f7fa2cea6d7d4334c9",
+        "splitUndoRedo": "PASS",
+        "mergeUndoRedo": "PASS",
+        "intermediateSplitSavedAndReopened": "PASS",
+        "mergedStateSavedAndReopened": "PASS",
+        "intermediateSplitPackageSha256": "f073fa2dfa0470d64afdde9bd69d8733aee52efeb97b337911cbf72e2c0e9af6",
+        "mergedPackageSha256": "b2a56ace7e3ff2ddce1a3820f5eec7975aeda6b36f22be0354b31cc4811d1102"
+      },
+      "t009": "PASS: exact split/merge saves state saved, synced=true, changedSince=false, no findings/errors; independent semantic package proof preserved other parts and non-segment section content."
+    },
+    "nativeP6Regression": {
+      "cases": {
+        "P6-HX-CURVE-TRANSFER": {
+          "status": "PASS",
+          "appPid": 3175051
+        },
+        "P6-HX-CURVE-TRANSFER-FRESH": {
+          "status": "PASS",
+          "appPid": 3175343,
+          "previousDistinctPid": 3175051
+        }
+      },
+      "applicationSha256": "86ead9f98522b26567dac01a607387b1f6aed3baae3d50600fecbb80f73c17ef",
+      "sourceFixtureSha256": "0e422807e41b58a11a9f0e62c6a1c32d5527a0c2cdd0bf5dc5e98f6e39fb20c0",
+      "destinationFixtureSha256": "b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7",
+      "savedAndFreshReopenPackageSha256": "164cfa9c3f9d0ef2dc6a9e39c99e6859da6c635eaa330f1fa28db7598dc77743",
+      "resultFile": "target/p1p2-results-p6-20261128/result.json",
+      "resultFileSha256": "1056751132c5bb71691e1bf196055b4fe511fd380f5cbec44e9d7ddb4eaf4665",
+      "cleanupFile": "target/p1p2-session-p6-20261128/cleanup.json",
+      "cleanupFileSha256": "3149a98b8ba0a4fb89d59809489070511f59463d010f45171ff45defb5fc45d",
+      "preservation": "PASS: source bytes unchanged; only intended destination OPC parts changed; unrelated destination OPC parts byte-identical; resource remap and object ownership verified; Undo/Redo and same-process save/reopen pass; fresh distinct-PID reopen and selection pass; cleanup proven with no survivors."
+    },
+    "retainedLimitations": [
+      "Independent Bezier control-point serialization remains unsupported and is not claimed implemented.",
+      "Exact arbitrary CURVE subdivision/merge remains unavailable; Catmull-Rom-derived rendering remains an inferred internal model, not a universal KS X 6101/Hancom guarantee.",
+      "Wayland, Windows, macOS, external Hancom/Microsoft Office interoperability, and portability outside the Nix runtime were not accepted by these runs."
+    ],
+    "baselineReproduction": {
+      "P1": {
+        "splitAdjacentCurveControlC1IntegerNumerator": {
+          "before": [
+            1050,
+            660
+          ],
+          "after": [
+            1020,
+            660
+          ]
+        },
+        "reverseMergeAdjacentCurveControlC1IntegerNumerator": {
+          "before": [
+            600,
+            360
+          ],
+          "after": [
+            630,
+            360
+          ]
+        },
+        "finding": "The exact LINE split and reverse merge changed a neighboring derived cubic control value in the documented counterexample; straight-line equivalence alone did not prove complete path geometry equivalence."
+      },
+      "P2": {
+        "directEngineAt256OpenUniqueAnchors": "A baseline insertion mutated the model before the resulting path failed editable-topology validation; the post-correction engine validates the candidate before applying it.",
+        "threeAnchorExactMergeUi": "The baseline UI enabled exact merge at three unique anchors while the engine rejected the merge because it would violate the minimum topology.",
+        "correctedTopologyRule": "Source and candidate validation, engine mutations, adapter capabilities, and UI use 3..256 unique anchors; a closed path’s repeated final closure point is not an additional unique anchor."
+      }
+    }
+  }
 }

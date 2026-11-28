@@ -272,5 +272,34 @@
     },
     "manifestContents": "rhwp-patches.py의 JSON은 pin, ordered patches의 개별 SHA-256, shared 입력, prepared files 해시를 기록한다. 별도 aggregate patch-manifest digest는 생성하지 않는다.",
     "sourceTreeSha256Definition": "SHA-256((json.dumps(manifest[\"files\"], sort_keys=True) + \"\\n\").encode())"
+  },
+  "postP1P2CurveRegression": {
+    "recordedDate": "2026-11-28",
+    "status": "PASS for P6-HX-CURVE-TRANSFER and P6-HX-CURVE-TRANSFER-FRESH on the P1/P2 corrected Release generation",
+    "applicationSha256": "86ead9f98522b26567dac01a607387b1f6aed3baae3d50600fecbb80f73c17ef",
+    "rhwpGeneration": "e27db5aba6d573c7c1dcb1b5a6d644491c0d56a409097af5a49f09246a07ba8e",
+    "cases": {
+      "P6-HX-CURVE-TRANSFER": {
+        "status": "PASS",
+        "appPid": 3175051
+      },
+      "P6-HX-CURVE-TRANSFER-FRESH": {
+        "status": "PASS",
+        "appPid": 3175343,
+        "previousAppPid": 3175051,
+        "distinctProcess": true
+      }
+    },
+    "fixtures": {
+      "sourceSha256": "0e422807e41b58a11a9f0e62c6a1c32d5527a0c2cdd0bf5dc5e98f6e39fb20c0",
+      "destinationSha256": "b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7"
+    },
+    "savedAndFreshReopenPackageSha256": "164cfa9c3f9d0ef2dc6a9e39c99e6859da6c635eaa330f1fa28db7598dc77743",
+    "resultFile": "target/p1p2-results-p6-20261128/result.json",
+    "resultFileSha256": "1056751132c5bb71691e1bf196055b4fe511fd380f5cbec44e9d7ddb4eaf4665",
+    "cleanupFile": "target/p1p2-session-p6-20261128/cleanup.json",
+    "cleanupFileSha256": "3149a98b8ba0a4fb89d59809489070511f59463d010f45171ff45defb5fc45d",
+    "cleanup": "PASS; proven private X11/IBus cleanup, no survivors.",
+    "preservation": "Source bytes remained unchanged. T009 changed only intended destination package parts, preserving unrelated OPC bytes, source/destination ownership, object identity, resource remapping, and editable segment structure. Undo/Redo and same-process saved-file reopening passed. Fresh process reopened and selected the transferred curve."
   }
 }
