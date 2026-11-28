@@ -1034,18 +1034,24 @@ def hwpx_curve_package_evidence(path):
         root = ET.fromstring(package.read("Contents/section0.xml"))
         curves = root.findall(".//{*}curve")
         h.require(len(curves) == 1, "expected exactly one target HWPX curve", len(curves))
-        segments = [list(segment.attrib.items()) for segment in curves[0].findall("./{*}seg")]
+        segments = [[list(pair) for pair in segment.attrib.items()]
+                    for segment in curves[0].findall("./{*}seg")]
         non_segment_root = deepcopy(root)
         non_segment_curves = non_segment_root.findall(".//{*}curve")
         for segment in non_segment_curves[0].findall("./{*}seg"):
             non_segment_curves[0].remove(segment)
         non_segment_xml = ET.tostring(non_segment_root)
+        preview = package.read("Preview/PrvImage.png")
+        preview_dimensions = struct.unpack_from(">II", preview, 16) if preview.startswith(b"\x89PNG\r\n\x1a\n") else None
         parts = {name: hashlib.sha256(package.read(name)).hexdigest()
-                 for name in package.namelist() if name != "Contents/section0.xml"}
+                 for name in package.namelist()
+                 if name not in {"Contents/section0.xml", "Preview/PrvImage.png"}}
     return {
         "segments": segments,
         "nonSegmentSectionSha256": hashlib.sha256(non_segment_xml).hexdigest(),
         "otherPartSha256": parts,
+        "previewSha256": hashlib.sha256(preview).hexdigest(),
+        "previewDimensions": preview_dimensions,
     }
 
 
@@ -1054,11 +1060,15 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "curve")
     path = h.begin(acc, row, fixture, out, filename)
     select = lambda: h.select_object(acc, target, "shape")
-    select()
-    if acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')!=='true'"):
-        acc.dom_click(".object-path-mode")
-    h.require(acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"),
-              "native HWPX curve path mode did not activate")
+
+    def enter_path_mode():
+        select()
+        if acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')!=='true'"):
+            acc.dom_click(".object-path-mode")
+        h.require(acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"),
+                  "native HWPX curve path mode did not activate")
+
+    enter_path_mode()
     expected_count = len(target["path"]["points"]) - int(closed)
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
               "native curve anchor count differs", expected_count)
@@ -1109,18 +1119,23 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
                   "mixed LINE/CURVE boundary deletion must remain unavailable")
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
     acc.dom_click(f"{POINT}:nth-of-type(1)")
     acc.dom_click(convert)
     commit_revision()
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
     # Leave the persisted first segment as LINE after proving the reverse conversion.
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     acc.dom_click(f"{POINT}:nth-of-type(1)")
     if closed:
         h.require(acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
@@ -1139,10 +1154,12 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
               "exact LINE split did not add one anchor")
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
               "exact LINE split Undo did not restore topology")
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
               "exact LINE split Redo did not restore the split anchor")
     acc.dom_click(f"{POINT}:nth-of-type(2)")
@@ -1154,10 +1171,12 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
               "exact LINE merge did not restore the original topology")
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
               "exact LINE merge Undo did not restore the split topology")
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
               "exact LINE merge Redo did not restore the joined topology")
     row["exactLineSplitMerge"] = {"undoRedo": True, "anchorCountAfterJoin": expected_count}
@@ -1173,10 +1192,12 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
               "anchor insertion did not add exactly one native anchor")
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
               "anchor insertion Undo did not restore topology")
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
 
     # The inserted anchor is index 2 and has like-typed neighbors in this fixture.
     acc.dom_click(f"{POINT}:nth-of-type(3)")
@@ -1188,10 +1209,12 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
               "anchor deletion did not restore the original anchor count")
     acc.key("ctrl+z")
     commit_revision()
+    enter_path_mode()
     h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
               "anchor deletion Undo did not restore the inserted anchor")
     acc.key("ctrl+y")
     commit_revision()
+    enter_path_mode()
 
     # Move a shared endpoint using trusted X11 pointer input. The closed path
     # must retain closure; open paths retain their two independent endpoints.
@@ -1209,13 +1232,13 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     h.require(after_coordinates != before_coordinates, "Native pointer did not move the selected curve anchor")
     acc.key("ctrl+z")
     commit_revision()
-    select()
+    enter_path_mode()
     acc.dom_click(first)
     h.require(acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
               == before_coordinates, "anchor movement Undo did not restore the shared endpoint")
     acc.key("ctrl+y")
     commit_revision()
-    select()
+    enter_path_mode()
     acc.dom_click(first)
     h.require(acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
               == after_coordinates, "anchor movement Redo did not restore the moved endpoint")
@@ -1227,6 +1250,12 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     source = hwpx_curve_package_evidence(fixture)
     h.require(saved["otherPartSha256"] == source["otherPartSha256"],
               "curve editing changed unrelated HWPX package parts")
+    h.require(saved["previewSha256"] != source["previewSha256"],
+              "saved HWPX retained a stale pre-edit page preview")
+    h.require(saved["previewDimensions"] is not None
+              and saved["previewDimensions"] == source["previewDimensions"],
+              "saved HWPX preview is malformed or changed its page dimensions",
+              {"source": source["previewDimensions"], "saved": saved["previewDimensions"]})
     h.require(saved["nonSegmentSectionSha256"] == source["nonSegmentSectionSha256"],
               "curve editing changed owner, formatting, or unrelated section XML")
     saved_frame = next(item for item in row["after"]["frames"]
@@ -1245,8 +1274,8 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     other_after = [item for item in row["after"]["frames"] if item["controlIdx"] != target["controlIdx"]]
     h.require(other_after == other_before, "curve edit changed another object or owner")
     row["independentPackageProof"] = saved
-    h.require(digest(fixture) == row["fixtureSha256"], "curve source fixture changed on disk")
-    reopen(acc, path, row)
+    h.require(h.digest(fixture) == row["fixtureSha256"], "curve source fixture changed on disk")
+    h.reopen(acc, path, row)
     h.require(row["reopenedSession"].get("dirty") == "false",
               "saved curve did not reopen in a clean independent document session", row["reopenedSession"])
     reopened = inspect(path)
@@ -1254,7 +1283,7 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
                           if item["controlIdx"] == target["controlIdx"] and item["path"])
     h.require(reopened_frame["path"] == saved_path, "fresh-session reopened curve differs from saved geometry")
     row["freshSessionPath"] = reopened_frame["path"]
-    row["publishedSha256"] = digest(path)
+    row["publishedSha256"] = h.digest(path)
 
 
 def hwpx_curve_contract_v1_case(acc, row, fixtures, out):
