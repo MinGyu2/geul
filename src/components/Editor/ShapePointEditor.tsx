@@ -104,12 +104,15 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
       || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!)));
   const previous = points[index - 1], next = points[index + 1];
   const curveNext = next ?? ((curveLineSegments || hwpxEditableCurveSegments) && path.closed ? points[0] : undefined);
+  const hwpxNativeCurve = path.kind === "curve" && path.nativeSegmentTypes !== undefined;
   const lineSplitAllowed = curveLineStructure || curveLineSegments?.includes(index) === true;
-  const split = lineSplitAllowed && path.points.length < 257 && !selected.control && curveNext && !curveNext.control
+  const splitWithinLimit = hwpxNativeCurve ? points.length < 256 : path.points.length < 257;
+  const split = lineSplitAllowed && splitWithinLimit && !selected.control && curveNext && !curveNext.control
     ? edgeInteriorPoint(selected, curveNext) : undefined;
   const lineJoinAllowed = curveLineStructure || (curveLineSegments?.includes(index - 1) === true
     && curveLineSegments?.includes(index) === true);
-  const canJoin = lineJoinAllowed && previous && next && !previous.control && !selected.control && !next.control
+  const joinWithinLimit = !hwpxNativeCurve || points.length > 3;
+  const canJoin = lineJoinAllowed && joinWithinLimit && previous && next && !previous.control && !selected.control && !next.control
     && canJoinEdges(previous, selected, next);
   const activeDraft = draft?.owner === owner && draft.index === index ? draft : null;
   const rawX = activeDraft?.x ?? String(selected.x), rawY = activeDraft?.y ?? String(selected.y);

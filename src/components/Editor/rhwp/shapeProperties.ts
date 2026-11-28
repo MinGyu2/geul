@@ -137,6 +137,20 @@ function parseHwpxSegmentTypes(raw: unknown, expectedCount: number): ("LINE" | "
   return types;
 }
 
+/** Validate HWPX's 3..256 unique-anchor contract; a closed path stores its first anchor again at the end. */
+export function hwpxUniqueAnchorCount(
+  points: readonly { x: number; y: number }[], closed: boolean,
+): number | undefined {
+  const repeatsStart = points.length > 1
+    && points[0]!.x === points[points.length - 1]!.x
+    && points[0]!.y === points[points.length - 1]!.y;
+  if (repeatsStart !== closed) return undefined;
+  const unique = closed ? points.slice(0, -1) : points;
+  if (unique.length < 3 || unique.length > 256
+    || new Set(unique.map(point => `${point.x}:${point.y}`)).size !== unique.length) return undefined;
+  return unique.length;
+}
+
 export function hwpxExactLineSegmentIndices(segmentTypes: readonly ("LINE" | "CURVE")[], closed: boolean): number[] {
   return segmentTypes.flatMap((type, index) => {
     if (type !== "LINE") return [];
@@ -179,7 +193,7 @@ export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [numbe
     if (rawNativeSegments !== undefined) {
       if (kind !== "curve") return undefined;
       const parsed = parseHwpxSegmentTypes(rawNativeSegments, points.length - 1);
-      if (!parsed) return undefined;
+      if (!parsed || hwpxUniqueAnchorCount(points, closed) === undefined) return undefined;
       nativeSegmentTypes = parsed;
     }
     return {

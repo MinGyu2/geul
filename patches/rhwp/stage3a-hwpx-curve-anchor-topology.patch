@@ -1,0 +1,122 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -396,6 +396,17 @@
+         .collect::<std::collections::BTreeSet<_>>()
+         .len()
+         == anchor_count
++}
++
++fn geul_hwpx_curve_candidate_valid(
++    segments: &[HwpxCurveSegment],
++    points: &[crate::model::Point],
++    expected_closed: bool,
++) -> bool {
++    let closed = points.len() > 1 && geul_same_point(&points[0], points.last().unwrap());
++    geul_hwpx_curve_matches(segments, points)
++        && geul_hwpx_curve_anchor_topology_valid(points)
++        && closed == expected_closed
+ }
+-
++
+ fn geul_hwpx_curve_editable_geometry(curve: &crate::model::shape::CurveShape) -> bool {
+@@ -2479,8 +2490,8 @@
+             )
+         };
+         if let Some(point) = insert {
+-            if segments.len() >= 256
+-                || points.len() >= 257
++            let anchor_count = points.len() - usize::from(closed);
++            if anchor_count >= 256
+                 || index >= segments.len()
+                 || point.x < 0
+                 || point.y < 0
+@@ -2538,7 +2549,7 @@
+                 points.remove(index);
+             }
+         }
+-        if !geul_hwpx_curve_matches(&segments, &points) {
++        if !geul_hwpx_curve_candidate_valid(&segments, &points, closed) {
+             return Err(geul_bad_shape_edit());
+         }
+         let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
+@@ -2627,13 +2638,14 @@
+             )
+         };
+         if let Some(point) = insert {
++            let anchor_count = points.len() - usize::from(closed);
+             let expected = beziers.get(index).map(|segment| crate::model::Point {
+                 x: ((segment.start.x + 3.0 * segment.control1.x
+                     + 3.0 * segment.control2.x + segment.end.x) / 8.0).round() as i32,
+                 y: ((segment.start.y + 3.0 * segment.control1.y
+                     + 3.0 * segment.control2.y + segment.end.y) / 8.0).round() as i32,
+             });
+-            if segments.len() >= 256 || points.len() >= 257 || index >= segments.len()
++            if anchor_count >= 256 || index >= segments.len()
+                 || point.x < 0 || point.y < 0 || point.x > width || point.y > height
+                 || expected.is_none_or(|expected| expected.x != point.x || expected.y != point.y)
+                 || points.iter().any(|existing| geul_same_point(existing, &point))
+@@ -2672,7 +2684,9 @@
+             hwpx_segments: segments.clone(),
+             ..Default::default()
+         };
+-        if candidate.hwpx_bezier_segments().is_none() {
++        if !geul_hwpx_curve_candidate_valid(&segments, &points, closed)
++            || candidate.hwpx_bezier_segments().is_none()
++        {
+             return Err(geul_bad_shape_edit());
+         }
+         let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
+@@ -2691,7 +2705,7 @@
+         &mut self, sec: usize, para: usize, ctrl: usize, index: usize,
+         split_at: Option<crate::model::Point>,
+     ) -> Result<(), HwpError> {
+-        let (mut segments, mut points, width, height, original_curve_geometry) = {
++        let (mut segments, mut points, width, height, original_curve_geometry, closed) = {
+             if self.source_format != crate::parser::FileFormat::Hwpx {
+                 return Err(geul_bad_shape_edit());
+             }
+@@ -2707,12 +2721,15 @@
+                 &curve.hwpx_segments,
+                 &curve.points,
+             ).ok_or_else(geul_bad_shape_edit)?;
++            let closed = curve.points.len() > 1
++                && geul_same_point(&curve.points[0], curve.points.last().unwrap());
+             (
+                 curve.hwpx_segments.clone(),
+                 curve.points.clone(),
+                 curve.drawing.shape_attr.original_width as i32,
+                 curve.drawing.shape_attr.original_height as i32,
+                 original_curve_geometry,
++                closed,
+             )
+         };
+         let exact_lines = geul_hwpx_exact_line_segments(&segments, &points)
+@@ -2723,8 +2740,8 @@
+                 && geul_cross(a, b, point) == 0
+         };
+         if let Some(point) = split_at {
+-            if segments.len() >= 256
+-                || points.len() >= 257
++            let anchor_count = points.len() - usize::from(closed);
++            if anchor_count >= 256
+                 || index >= segments.len()
+                 || !exact_lines.contains(&index)
+                 || point.x < 0
+@@ -2747,7 +2764,6 @@
+             segments.splice(index..=index, [first, second]);
+             points.insert(index + 1, point);
+         } else {
+-            let closed = points.len() > 1 && geul_same_point(&points[0], points.last().unwrap());
+             let anchor_count = points.len() - usize::from(closed);
+             if anchor_count <= 3
+                 || index == 0
+@@ -2766,8 +2782,7 @@
+             segments.remove(index);
+             points.remove(index);
+         }
+-        if !geul_hwpx_curve_matches(&segments, &points)
+-            || !geul_hwpx_curve_anchor_topology_valid(&points)
++        if !geul_hwpx_curve_candidate_valid(&segments, &points, closed)
+             || geul_hwpx_curve_geometry_signature(&segments, &points)
+                 .is_none_or(|candidate| candidate != original_curve_geometry)
+         {

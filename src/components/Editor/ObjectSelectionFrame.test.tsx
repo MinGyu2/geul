@@ -468,6 +468,55 @@ it("exposes exact HWPX LINE split and merge controls only for geometry-independe
   expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "pathSegment", action: "joinLines", index: 1 }, 7);
 });
 
+it("disables structural removal and exact LINE merge at three unique HWPX anchors", () => {
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] },
+    operations: ["deselect", "pathPoint", "pathVertex", "pathSegment"],
+    curveLineSegments: [0, 1],
+    hwpxEditableCurveSegments: [0, 1],
+    shapePath: { kind: "curve", closed: false, width: 60, height: 60,
+      nativeSegmentTypes: ["LINE", "LINE"],
+      points: [[10, 10], [30, 10], [50, 10]].map(([x, y]) => ({ x: x!, y: y!, control: false })) },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 2" }));
+  expect(screen.getByRole("button", { name: "Remove anchor (curve shape may change)" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Join adjacent straight segments" })).toBeNull();
+  expect(onEdit).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("uses unique anchor count for HWPX insertion and exact split limits (closed=%s)", closed => {
+  const makePath = (anchorCount: number) => {
+    const anchors = Array.from({ length: anchorCount }, (_, index) => ({ x: 10 + 2 * index, y: 10, control: false }));
+    const points = closed ? [...anchors, anchors[0]!] : anchors;
+    return { kind: "curve" as const, closed, width: 600, height: 60, points,
+      nativeSegmentTypes: Array.from({ length: points.length - 1 }, () => "LINE" as const) };
+  };
+  for (const anchorCount of [255, 256]) {
+    cleanup();
+    const path = makePath(anchorCount);
+    const segmentCount = path.points.length - 1;
+    const { onEdit } = frame({ selection: selection({
+      kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] },
+      operations: ["deselect", "pathPoint", "pathVertex", "pathSegment"],
+      curveLineSegments: Array.from({ length: segmentCount }, (_, index) => index),
+      hwpxEditableCurveSegments: Array.from({ length: segmentCount }, (_, index) => index),
+      shapePath: path,
+    }) });
+    fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+    const add = screen.getByRole<HTMLButtonElement>("button", { name: "Insert anchor (curve shape may change)" });
+    const split = screen.queryByRole<HTMLButtonElement>("button", { name: "Split next straight segment" });
+    if (anchorCount === 255) {
+      expect(add).toBeEnabled();
+      expect(split).toBeEnabled();
+    } else {
+      expect(add).toBeDisabled();
+      expect(split).toBeNull();
+    }
+    expect(onEdit).not.toHaveBeenCalled();
+  }
+});
+
 it("only enables HWP5 vertex removal when joining collinear edges", () => {
   const vertices = [[10, 10], [30, 10], [50, 10], [20, 40], [10, 10]];
   const { onEdit } = frame({ selection: selection({

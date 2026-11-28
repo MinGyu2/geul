@@ -4,7 +4,7 @@ import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 import { inspectHwp5CaptionLayout } from "./hwp5CaptionLayout";
-import { deriveHwpxCurveBezierSegments, hexToBgr, hwpxExactLineSegmentIndices, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveEditableSegments, inspectRhwpHwpxCurveLineSegments, inspectRhwpHwpxCurveSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { deriveHwpxCurveBezierSegments, hexToBgr, hwpxExactLineSegmentIndices, hwpxUniqueAnchorCount, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveEditableSegments, inspectRhwpHwpxCurveLineSegments, inspectRhwpHwpxCurveSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import {
   extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject,
   insertHwpxPortableObjectIntoHwp5, readHwpxGroupCaption, readHwpxPictureCaption,
@@ -5290,7 +5290,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         const available = inspectRhwpHwpxCurveEditableSegments(doc, address, path.points.length - 1);
         if (!path.nativeSegmentTypes || !doc.editHwpxCurveVertex || !available
           || JSON.stringify(available) !== JSON.stringify(selected.hwpxEditableCurveSegments)
-          || path.nativeSegmentTypes.length !== path.points.length - 1) return false;
+          || path.nativeSegmentTypes.length !== path.points.length - 1
+          || hwpxUniqueAnchorCount(path.points, path.closed) === undefined) return false;
         const points = path.closed ? path.points.slice(0, -1) : path.points.slice();
         const segmentTypes = path.nativeSegmentTypes.slice();
         if (!Number.isSafeInteger(edit.index) || edit.index < 0) return false;
@@ -5315,6 +5316,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           apply = () => doc.editHwpxCurveVertex!(...address, edit.index, false, 0, 0);
         }
         if (path.closed) points.push(points[0]!);
+        if (segmentTypes.length !== points.length - 1
+          || hwpxUniqueAnchorCount(points, path.closed) === undefined) return false;
         const allCurve = segmentTypes.every(type => type === "CURVE");
         const bezierSegments = allCurve ? deriveHwpxCurveBezierSegments(points, path.closed) : undefined;
         if (allCurve && !bezierSegments) return false;
@@ -5337,7 +5340,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       } else if (path?.kind === "curve" && format === "hwpx") {
         const available = inspectRhwpHwpxCurveSegments(doc, address, path.points.length - 1);
         if (!path.bezierSegments || !selected.hwpxCurveSegments || !doc.editHwpxCurveAnchor
-          || !available || JSON.stringify(available) !== JSON.stringify(selected.hwpxCurveSegments)) return false;
+          || !available || JSON.stringify(available) !== JSON.stringify(selected.hwpxCurveSegments)
+          || hwpxUniqueAnchorCount(path.points, path.closed) === undefined) return false;
         const points = path.closed ? path.points.slice(0, -1) : path.points.slice();
         if (!Number.isSafeInteger(edit.index) || edit.index < 0) return false;
         if (edit.action === "insert") {
@@ -5360,6 +5364,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           apply = () => doc.editHwpxCurveAnchor!(...address, edit.index, false, 0, 0);
         }
         if (path.closed) points.push(points[0]!);
+        if (hwpxUniqueAnchorCount(points, path.closed) === undefined) return false;
         const bezierSegments = deriveHwpxCurveBezierSegments(points, path.closed);
         if (!bezierSegments) return false;
         const hwpxCurveSegments = Array.from({ length: points.length - 1 }, (_, index) => index);
@@ -5421,11 +5426,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           path.nativeSegmentTypes, path.closed);
         if (!available || JSON.stringify(available) !== JSON.stringify(selected.curveLineSegments)
           || !path.nativeSegmentTypes || path.nativeSegmentTypes.length !== path.points.length - 1) return false;
+        const sourceAnchorCount = hwpxUniqueAnchorCount(path.points, path.closed);
+        if (sourceAnchorCount === undefined) return false;
         const points = path.points.slice();
         const segmentTypes = path.nativeSegmentTypes.slice();
         let curveLineSegments: number[];
         if (edit.action === "splitLine") {
-          if (!available.includes(edit.index) || edit.index >= points.length - 1 || points.length >= 257
+          if (!available.includes(edit.index) || edit.index >= points.length - 1 || sourceAnchorCount >= 256
             || !Number.isSafeInteger(edit.x) || !Number.isSafeInteger(edit.y)
             || edit.x < 0 || edit.x > path.width || edit.y < 0 || edit.y > path.height) return false;
           points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
@@ -5433,13 +5440,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
           apply = () => doc.editHwpxCurveLine!(...address, edit.index, true, edit.x, edit.y);
         } else if (edit.action === "joinLines") {
-          if (edit.index <= 0 || edit.index >= points.length - 1
+          if (sourceAnchorCount <= 3 || edit.index <= 0 || edit.index >= points.length - 1
             || !available.includes(edit.index - 1) || !available.includes(edit.index)) return false;
           points.splice(edit.index, 1);
           segmentTypes.splice(edit.index, 1);
           curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
           apply = () => doc.editHwpxCurveLine!(...address, edit.index, false, 0, 0);
         } else return false;
+        if (segmentTypes.length !== points.length - 1
+          || hwpxUniqueAnchorCount(points, path.closed) === undefined) return false;
         const shapePath: ShapePath = { ...path, points, nativeSegmentTypes: segmentTypes };
         delete shapePath.curveModel;
         delete shapePath.bezierSegments;

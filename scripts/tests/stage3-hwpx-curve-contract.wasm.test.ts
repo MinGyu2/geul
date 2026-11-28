@@ -90,6 +90,17 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 `, JSON.stringify(points), JSON.stringify(types)], { input: bytes }));
 }
 
+function nativeCurveWithAnchorCount(
+  bytes: Uint8Array, anchorCount: number, closed: boolean, type: "LINE" | "CURVE" = "LINE",
+) {
+  const anchors = Array.from({ length: anchorCount }, (_, index) => ({
+    x: 100 + 4 * index,
+    y: index < 3 ? 100 : 100 + index % 7,
+  }));
+  const points = closed ? [...anchors, anchors[0]!] : anchors;
+  return nativeCurveFixture(bytes, points, Array.from({ length: points.length - 1 }, () => type));
+}
+
 function independentCurveControls(points: { x: number; y: number }[], segment: number) {
   if (segment <= 0 || segment + 2 >= points.length) throw new Error("oracle requires both neighboring anchors");
   const start = points[segment]!, end = points[segment + 1]!;
@@ -701,6 +712,222 @@ it("supports exact collinear LINE split and merge separately from ordinary curve
         finally { reopened.free(); }
       } finally { mergedSave.free(); }
     } finally { editor.dispose(); }
+  }
+});
+
+it("enforces the 3..256 unique-anchor boundary in direct native LINE mutations", () => {
+  for (const closed of [false, true]) {
+    const openDoc = (count: number) => new engine.HwpDocument(
+      nativeCurveWithAnchorCount(readFileSync(fixture), count, closed),
+    ) as RhwpDocument;
+    const identity = (doc: RhwpDocument) => {
+      const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+      expect(frame).toBeDefined();
+      return frame!.controlIdx;
+    };
+    const anchorsIn = (path: ReturnType<typeof pathOf>) => path.closed ? path.points.length - 1 : path.points.length;
+    const rejectWithoutMutation = (doc: RhwpDocument, control: number, action: () => void) => {
+      const path = pathOf(doc, control), content = doc.exportHwpx();
+      expect(() => action()).toThrow();
+      expect(pathOf(doc, control)).toEqual(path);
+      expect(doc.exportHwpx()).toEqual(content);
+    };
+
+    const minimum = openDoc(3);
+    try {
+      const control = identity(minimum), path = pathOf(minimum, control);
+      expect(path.closed).toBe(closed);
+      expect(anchorsIn(path)).toBe(3);
+      rejectWithoutMutation(minimum, control,
+        () => minimum.editHwpxCurveVertex!(0, 0, control, 1, false, 0, 0));
+      rejectWithoutMutation(minimum, control,
+        () => minimum.editHwpxCurveLine!(0, 0, control, 1, false, 0, 0));
+    } finally { minimum.free(); }
+
+    const fourByDeletion = openDoc(4);
+    try {
+      const control = identity(fourByDeletion);
+      fourByDeletion.editHwpxCurveVertex!(0, 0, control, 1, false, 0, 0);
+      const result = pathOf(fourByDeletion, control);
+      expect(anchorsIn(result)).toBe(3);
+      expect(result.closed).toBe(closed);
+      if (closed) expect(result.points.at(-1)).toEqual(result.points[0]);
+    } finally { fourByDeletion.free(); }
+
+    if (closed) {
+      const closedSeamDeletion = openDoc(4);
+      try {
+        const control = identity(closedSeamDeletion);
+        closedSeamDeletion.editHwpxCurveVertex!(0, 0, control, 0, false, 0, 0);
+        const result = pathOf(closedSeamDeletion, control);
+        expect(anchorsIn(result)).toBe(3);
+        expect(result.points.at(-1)).toEqual(result.points[0]);
+      } finally { closedSeamDeletion.free(); }
+    }
+
+    const fourByMerge = openDoc(4);
+    try {
+      const control = identity(fourByMerge);
+      fourByMerge.editHwpxCurveLine!(0, 0, control, 1, false, 0, 0);
+      const result = pathOf(fourByMerge, control);
+      expect(anchorsIn(result)).toBe(3);
+      expect(result.closed).toBe(closed);
+      if (closed) expect(result.points.at(-1)).toEqual(result.points[0]);
+    } finally { fourByMerge.free(); }
+
+    for (const action of ["ordinary", "exact"] as const) {
+      const boundary = openDoc(256);
+      try {
+        const control = identity(boundary);
+        expect(anchorsIn(pathOf(boundary, control))).toBe(256);
+        if (action === "ordinary") {
+          rejectWithoutMutation(boundary, control,
+            () => boundary.editHwpxCurveVertex!(0, 0, control, 0, true, 102, 101));
+        } else {
+          rejectWithoutMutation(boundary, control,
+            () => boundary.editHwpxCurveLine!(0, 0, control, 0, true, 102, 100));
+        }
+      } finally { boundary.free(); }
+    }
+
+    for (const action of ["ordinary", "exact"] as const) {
+      const below = openDoc(255);
+      try {
+        const control = identity(below);
+        if (action === "ordinary") {
+          below.editHwpxCurveVertex!(0, 0, control, 0, true, 102, 101);
+        } else {
+          below.editHwpxCurveLine!(0, 0, control, 0, true, 102, 100);
+        }
+        const result = pathOf(below, control);
+        expect(anchorsIn(result)).toBe(256);
+        expect(result.closed).toBe(closed);
+        if (closed) expect(result.points.at(-1)).toEqual(result.points[0]);
+      } finally { below.free(); }
+    }
+  }
+});
+
+it("enforces the same 3..256 unique-anchor boundary for all-CURVE anchor mutations", () => {
+  for (const closed of [false, true]) {
+    for (const anchorCount of [255, 256]) {
+      const bytes = nativeCurveWithAnchorCount(readFileSync(fixture), anchorCount, closed, "CURVE");
+      const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+      try {
+        const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+        expect(frame).toBeDefined();
+        const control = frame!.controlIdx, before = pathOf(doc, control);
+        const segment = before.bezierSegments[0];
+        const insertion = {
+          x: Math.round((segment.start.x + 3 * segment.control1.x + 3 * segment.control2.x + segment.end.x) / 8),
+          y: Math.round((segment.start.y + 3 * segment.control1.y + 3 * segment.control2.y + segment.end.y) / 8),
+        };
+        if (anchorCount === 255) {
+          doc.editHwpxCurveAnchor!(0, 0, control, 0, true, insertion.x, insertion.y);
+          const result = pathOf(doc, control);
+          expect(result.closed).toBe(closed);
+          expect(closed ? result.points.length - 1 : result.points.length).toBe(256);
+          if (closed) expect(result.points.at(-1)).toEqual(result.points[0]);
+        } else {
+          const originalBytes = doc.exportHwpx();
+          expect(() => doc.editHwpxCurveAnchor!(0, 0, control, 0, true, insertion.x, insertion.y)).toThrow();
+          expect(pathOf(doc, control)).toEqual(before);
+          expect(doc.exportHwpx()).toEqual(originalBytes);
+        }
+      } finally { doc.free(); }
+    }
+  }
+});
+
+it("keeps adapter capabilities, history, and save/reopen valid at the 255/256 boundary", async () => {
+  for (const closed of [false, true]) {
+    const { editor, doc, pick, edit, confirm } = await setup(
+      nativeCurveWithAnchorCount(readFileSync(fixture), 255, closed),
+    );
+    try {
+      const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+      expect(frame).toBeDefined();
+      const original = pathOf(doc, frame!.controlIdx);
+      pick(frame!);
+      expect(editor.objectSelection!.curveLineSegments).toEqual(original.nativeSegmentTypes.map((_: string, index: number) => index));
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 102, y: 100 })).toBe(true);
+      await confirm();
+      const split = pathOf(doc, frame!.controlIdx);
+      expect(split.closed).toBe(closed);
+      expect(closed ? split.points.length - 1 : split.points.length).toBe(256);
+      if (closed) expect(split.points.at(-1)).toEqual(split.points[0]);
+      pick(frame!);
+      expect(editor.objectSelection?.shapePath?.points).toHaveLength(closed ? 257 : 256);
+      expect(editor.objectSelection?.curveLineSegments).toHaveLength(split.nativeSegmentTypes.length);
+
+      const saved = doc.exportHwpxWithReport();
+      try {
+        const bytes = saved.takeBytes();
+        expectReopen(doc, bytes, saved.contentLoss());
+        const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+        try {
+          const reopenedFrame = shapes(reopened).find(candidate => pathOf(reopened, candidate.controlIdx)?.kind === "curve");
+          expect(reopenedFrame).toBeDefined();
+          const durable = pathOf(reopened, reopenedFrame!.controlIdx);
+          expect(durable).toEqual(split);
+          expect(durable.closed).toBe(closed);
+          expect(closed ? durable.points.length - 1 : durable.points.length).toBe(256);
+        } finally { reopened.free(); }
+      } finally { saved.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(original);
+      pick(frame!);
+      expect(editor.objectSelection?.curveLineSegments).toHaveLength(original.nativeSegmentTypes.length);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(split);
+      pick(frame!);
+      expect(editor.objectSelection?.curveLineSegments).toHaveLength(split.nativeSegmentTypes.length);
+    } finally { editor.dispose(); }
+  }
+
+  for (const closed of [false, true]) {
+    const { editor, doc, pick, edit } = await setup(
+      nativeCurveWithAnchorCount(readFileSync(fixture), 256, closed),
+    );
+    try {
+      const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+      expect(frame).toBeDefined();
+      pick(frame!);
+      const selection = editor.objectSelection, path = pathOf(doc, frame!.controlIdx);
+      const bytes = doc.exportHwpx(), history = editor.snapshot().history;
+      const revision = editor.localRevision, dirty = editor.hasUnpreservedChanges;
+      expect(edit({ kind: "pathVertex", action: "insert", index: 0, x: 102, y: 101 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 102, y: 100 })).toBe(false);
+      expect(doc.exportHwpx()).toEqual(bytes);
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(path);
+      expect(editor.objectSelection).toBe(selection);
+      expect(editor.localRevision).toBe(revision);
+      expect(editor.snapshot().history).toEqual(history);
+      expect(editor.hasUnpreservedChanges).toBe(dirty);
+    } finally { editor.dispose(); }
+  }
+});
+
+it("rejects malformed duplicate-anchor and closure topologies without changing source bytes", () => {
+  const cases = [
+    { points: [{ x: 100, y: 100 }, { x: 104, y: 100 }, { x: 104, y: 100 }, { x: 112, y: 103 }], closed: false },
+    { points: [{ x: 100, y: 100 }, { x: 104, y: 100 }, { x: 100, y: 100 }], closed: true },
+  ];
+  for (const { points, closed } of cases) {
+    const encoded = closed ? [...points, points[0]!] : points;
+    const bytes = nativeCurveFixture(readFileSync(fixture), encoded,
+      Array.from({ length: encoded.length - 1 }, () => "LINE" as const));
+    const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+    try {
+      const frame = shapes(doc)[0];
+      expect(frame).toBeDefined();
+      const control = frame!.controlIdx, before = doc.exportHwpx();
+      expect(() => doc.editHwpxCurveVertex!(0, 0, control, 0, true, 102, 101)).toThrow();
+      expect(doc.exportHwpx()).toEqual(before);
+    } finally { doc.free(); }
   }
 });
 
