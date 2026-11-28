@@ -704,10 +704,11 @@
     "crossFeatureRegression": {
       "issue": "P6-HX-CURVE",
       "result": "PASS for P6-HX-CURVE-TRANSFER and P6-HX-CURVE-TRANSFER-FRESH on the same Release generation.",
-      "resultFile": "target/native-p6-hx-curve-contract-v1-20261128/result.json",
+      "resultFile": "target/final-stage3-curve-evidence/p6-hx-curve-contract-v1-20261128/native-p6-hx-curve-contract-v1-20261128/result.json",
       "resultFileSha256": "61363ca3563c4ce65cbe6f415c2e1911daf77fb3cf038dc2e737c6dc0dfc7ff3",
       "cleanupFileSha256": "75dc82e16cd7dddb4d7dc36c7f3856ff3a093abe1e97518511f82ad617f455c2",
-      "cleanup": "PASS; proven with no survivors"
+      "cleanup": "PASS; proven with no survivors",
+      "cleanupFile": "target/final-stage3-curve-evidence/p6-hx-curve-contract-v1-20261128/native-session-p6-hx-curve-contract-v1-20261128/cleanup.json"
     },
     "commitSet": [
       {
